@@ -71,12 +71,27 @@ jobs:
       - name: Build documents
         run: CI=false properdocs build --clean
 
-      - name: Download dictionary
+      - name: Download Valencian dictionary
         run: |
           mkdir -p .hunspell
           curl -L https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/refs/heads/master/resultats/hunspell/catalan-valencia.dic -o .hunspell/ca_ES_valencia.dic
           curl -L https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/refs/heads/master/resultats/hunspell/catalan-valencia.aff -o .hunspell/ca_ES_valencia.aff
           hunspell -D
+
+      - name: Create pyspelling config
+        run: |
+          cat > .pyspelling.yml <<'EOF'
+          matrix:
+            - name: docs
+              dictionary:
+                wordlists:
+                  - .hunspell/ca_ES_valencia.dic
+                output: .hunspell/ca_ES_valencia.dic
+              sources:
+                - 'docs/site/**/*.html'
+              spellchecker:
+                language: ca_ES_valencia
+          EOF
 
       - name: Spell check
         run: |
@@ -104,4 +119,4 @@ jobs:
             exit 0
           fi
 
-          pyspelling --name docs $SOURCES
+          pyspelling --config .pyspelling.yml --name docs $SOURCES
