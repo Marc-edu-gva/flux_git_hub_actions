@@ -52,71 +52,53 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.x
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install -U -r requirements.txt
-
-      - name: Install pyspelling
-        run: pip install pyspelling
-
       - name: Install hunspell
         run: |
           sudo apt update
           sudo apt install hunspell -y
-
-      - name: Build documents
-        run: CI=false properdocs build --clean
 
       - name: Download Valencian dictionary
         run: |
           mkdir -p .hunspell
           curl -L https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/refs/heads/master/resultats/hunspell/catalan-valencia.dic -o .hunspell/ca_ES_valencia.dic
           curl -L https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/refs/heads/master/resultats/hunspell/catalan-valencia.aff -o .hunspell/ca_ES_valencia.aff
-          hunspell -D
 
-      - name: Create pyspelling config
+      - name: Spell check with hunspell
+        shell: bash
         run: |
-          cat > .pyspelling.yml <<'EOF'
-          matrix:
-            - name: docs
-              dictionary:
-                wordlists:
-                  - .hunspell/ca_ES_valencia.dic
-                output: .hunspell/ca_ES_valencia.dic
-              sources:
-                - 'docs/site/**/*.html'
-              spellchecker:
-                language: ca_ES_valencia
-          EOF
+          set -euo pipefail
 
-      - name: Spell check
-        run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             FILES="$CHANGED_FILES"
           else
             FILES=$(git diff --name-only origin/main HEAD | grep 'docs/.*\.md$' || true)
           fi
 
-          FILES=$(echo "$FILES" | sed 's/\/index//' | sed 's#^docs/#docs/site/#' | sed 's/.md$/\/index.html/')
-
-          echo "FILES=$FILES"
-
-          SOURCES=""
-          for FILE in $FILES; do
-            if [ -f "$FILE" ]; then
-              SOURCES="$SOURCES -S $FILE"
-            fi
-          done
-
-          echo "SOURCES=$SOURCES"
-
-          if [ -z "$SOURCES" ]; then
-            echo "No files to check"
+          if [ -z "$FILES" ]; then
+            echo "No markdown files to check"
             exit 0
           fi
 
-          pyspelling --config .pyspelling.yml --name docs $SOURCES
+          ERRORS=0
+
+          for FILE in $FILES; do
+            if [ ! -f "$FILE" ]; then
+              continue
+            fi
+
+            echo "Checking $FILE"
+
+            MISSPELLINGS=$(hunspell -d .hunspell/ca_ES_valencia -l "$FILE" || true)
+            if [ -n "$MISSPELLINGS" ]; then
+              echo "Misspellings found in $FILE:"
+              echo "$MISSPELLINGS"
+              ERRORS=1
+            fi
+          done
+
+          if [ "$ERRORS" -ne 0 ]; then
+            echo "Spell check failed"
+            exit 1
+          fi
+
+          echo "Spell check passed"
